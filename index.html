@@ -9,14 +9,10 @@
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
-  <!-- Chromakey (green screen) shader for videos -->
-  <script src="https://unpkg.com/aframe-chromakey-material@1.1.4/dist/aframe-chromakey-material.min.js"></script>
-
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
 
-    /* Force fullscreen AR view */
     a-scene {
       position: fixed !important;
       top: 0 !important; left: 0 !important;
@@ -40,7 +36,6 @@
       background: transparent !important;
     }
 
-    /* Loading overlay */
     #loading-overlay {
       position: fixed; inset: 0; background: #000;
       display: flex; flex-direction: column;
@@ -60,7 +55,6 @@
     #loading-overlay p { font-size: 16px; opacity: 0.8; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Scan hint */
     #scan-hint {
       position: fixed; bottom: 100px; left: 50%;
       transform: translateX(-50%);
@@ -73,26 +67,21 @@
       white-space: nowrap;
     }
 
-    /* Toggle button */
     #toggle-btn {
       position: fixed;
       bottom: 36px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(255, 119, 85, 0.9);
-      color: #fff;
-      border: none;
+      background: rgba(255, 119, 85, 0.92);
+      color: #fff; border: none;
       border-radius: 99px;
-      padding: 14px 36px;
-      font-size: 16px;
-      font-weight: 700;
+      padding: 14px 40px;
+      font-size: 16px; font-weight: 700;
       font-family: -apple-system, sans-serif;
-      cursor: pointer;
-      z-index: 9998;
+      cursor: pointer; z-index: 9998;
       display: none;
       box-shadow: 0 4px 20px rgba(255,119,85,0.4);
-      letter-spacing: 0.5px;
     }
-    #toggle-btn:active { transform: translateX(-50%) scale(0.96); }
+    #toggle-btn:active { opacity: 0.85; }
   </style>
 </head>
 <body>
@@ -103,7 +92,6 @@
   </div>
 
   <div id="scan-hint">📷 Point at the target image</div>
-
   <button id="toggle-btn">Toggle Video</button>
 
   <a-scene
@@ -113,34 +101,32 @@
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
   >
-
     <a-assets>
-      <video id="Jepah1-video" autoplay muted playsinline crossorigin="anonymous"
-        loop src="assets/Jepah_1.mp4" preload="auto"></video>
-      <video id="Jepah2-video" autoplay muted playsinline crossorigin="anonymous"
-        loop src="assets/Jepah_2.mp4" preload="auto" style="display:none"></video>
+      <video id="vid1" autoplay muted playsinline loop crossorigin="anonymous"
+        src="assets/Jepah_1.mp4" preload="auto"></video>
+      <video id="vid2" autoplay muted playsinline loop crossorigin="anonymous"
+        src="assets/Jepah_2.mp4" preload="auto"></video>
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
 
-    <!-- Image Target 0 = first image (model-target / my-target combined into one .mind) -->
     <a-entity mindar-image-target="targetIndex: 0">
 
-      <!-- Video 1 plane - chromakey green screen removed -->
+      <!-- Video 1 — green screen chromakey via custom component -->
       <a-entity
         id="vid1-entity"
-        geometry="primitive: plane; height: 1.2; width: 1.2;"
-        material="shader: chromakey; src: #Jepah1-video; color: 0 1 0; transparent: true"
+        green-video="videoId: vid1"
+        geometry="primitive: plane; width: 1; height: 1;"
         position="0.05 -0.03 0"
         scale="0.82 0.82 0.82"
         visible="true"
       ></a-entity>
 
-      <!-- Video 2 plane -->
+      <!-- Video 2 -->
       <a-entity
         id="vid2-entity"
-        geometry="primitive: plane; height: 1.2; width: 1.2;"
-        material="shader: chromakey; src: #Jepah2-video; color: 0 1 0; transparent: true"
+        green-video="videoId: vid2"
+        geometry="primitive: plane; width: 1; height: 1;"
         position="0.05 -0.03 0"
         scale="0.82 0.82 0.82"
         visible="false"
@@ -150,59 +136,131 @@
 
     <a-light type="ambient"     color="#fff" intensity="0.7"></a-light>
     <a-light type="directional" position="1 2 1" intensity="0.8"></a-light>
-
   </a-scene>
 
   <script>
-    var overlay    = document.getElementById('loading-overlay');
-    var scanHint   = document.getElementById('scan-hint');
-    var toggleBtn  = document.getElementById('toggle-btn');
-    var scene      = document.querySelector('a-scene');
+    // ─── Custom green-screen video component ──────────────────────────────────
+    // Renders a video element onto a plane mesh using THREE.VideoTexture
+    // with a custom GLSL shader that removes green (0,1,0) pixels
+    AFRAME.registerComponent('green-video', {
+      schema: {
+        videoId:    { type: 'string',  default: '' },
+        keyColor:   { type: 'color',   default: '#00ff00' },
+        similarity: { type: 'number',  default: 0.4 },
+        smoothness: { type: 'number',  default: 0.08 },
+      },
 
-    // --- Loading ---
+      init: function () {
+        var self = this;
+        var videoEl = document.getElementById(this.data.videoId);
+        if (!videoEl) { console.warn('green-video: video not found', this.data.videoId); return; }
+
+        videoEl.play().catch(function(){});
+
+        var texture = new THREE.VideoTexture(videoEl);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.format    = THREE.RGBAFormat;
+
+        // Parse key color
+        var c = new THREE.Color(this.data.keyColor);
+
+        var material = new THREE.ShaderMaterial({
+          uniforms: {
+            map:        { value: texture },
+            keyColor:   { value: new THREE.Vector3(c.r, c.g, c.b) },
+            similarity: { value: this.data.similarity },
+            smoothness: { value: this.data.smoothness },
+          },
+          vertexShader: `
+            varying vec2 vUv;
+            void main() {
+              vUv = uv;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform sampler2D map;
+            uniform vec3      keyColor;
+            uniform float     similarity;
+            uniform float     smoothness;
+            varying vec2      vUv;
+
+            void main() {
+              vec4 color = texture2D(map, vUv);
+              float diff = length(color.rgb - keyColor);
+              float alpha = smoothstep(similarity - smoothness, similarity + smoothness, diff);
+              gl_FragColor = vec4(color.rgb, color.a * alpha);
+            }
+          `,
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+
+        // Wait for mesh to be ready then apply material
+        function applyMaterial() {
+          var mesh = self.el.getObject3D('mesh');
+          if (mesh) {
+            mesh.material = material;
+          }
+        }
+
+        if (this.el.getObject3D('mesh')) {
+          applyMaterial();
+        } else {
+          this.el.addEventListener('object3dset', applyMaterial);
+          // Also try on loaded
+          this.el.sceneEl.addEventListener('loaded', applyMaterial);
+          setTimeout(applyMaterial, 500);
+        }
+      },
+    });
+    // ─────────────────────────────────────────────────────────────────────────
+
+    var overlay   = document.getElementById('loading-overlay');
+    var scanHint  = document.getElementById('scan-hint');
+    var toggleBtn = document.getElementById('toggle-btn');
+    var scene     = document.querySelector('a-scene');
+
     function hideOverlay() {
       overlay.style.opacity = '0';
       setTimeout(function() { overlay.style.display = 'none'; }, 700);
       scanHint.style.display = 'block';
-      // Force video elements visible
+      // Ensure camera video stays visible
       document.querySelectorAll('video').forEach(function(v) {
-        v.style.visibility = 'visible';
-        v.style.opacity = '1';
-        v.style.zIndex = '0';
+        if (!v.id || v.id === '') { // MindAR's camera feed video has no id
+          v.style.visibility = 'visible';
+          v.style.opacity = '1';
+          v.style.zIndex = '0';
+        }
       });
     }
 
     scene.addEventListener('loaded', function () {
       var sys = scene.systems['mindar-image-system'];
-      if (sys) {
-        sys.el.addEventListener('arReady', hideOverlay);
-      }
+      if (sys) { sys.el.addEventListener('arReady', hideOverlay); }
       setTimeout(hideOverlay, 8000);
     });
 
-    // --- Show toggle button when target found ---
-    var target = document.querySelector('[mindar-image-target]');
-    target.addEventListener('targetFound', function() {
+    var targetEl = document.querySelector('[mindar-image-target]');
+    targetEl.addEventListener('targetFound', function() {
       scanHint.style.display = 'none';
       toggleBtn.style.display = 'block';
-      // Play both videos
-      document.getElementById('Jepah1-video').play();
-      document.getElementById('Jepah2-video').play();
+      document.getElementById('vid1').play().catch(function(){});
+      document.getElementById('vid2').play().catch(function(){});
     });
-    target.addEventListener('targetLost', function() {
+    targetEl.addEventListener('targetLost', function() {
       scanHint.style.display = 'block';
       toggleBtn.style.display = 'none';
     });
 
-    // --- Toggle between vid1 and vid2 ---
+    // Toggle between videos
     var showingVid1 = true;
     toggleBtn.addEventListener('click', function() {
-      var vid1 = document.getElementById('vid1-entity');
-      var vid2 = document.getElementById('vid2-entity');
       showingVid1 = !showingVid1;
-      vid1.setAttribute('visible', showingVid1);
-      vid2.setAttribute('visible', !showingVid1);
-      toggleBtn.textContent = showingVid1 ? 'Toggle Video' : 'Toggle Video';
+      document.getElementById('vid1-entity').setAttribute('visible', showingVid1);
+      document.getElementById('vid2-entity').setAttribute('visible', !showingVid1);
     });
   </script>
 
