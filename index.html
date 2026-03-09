@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Arfest Wanjepah AR</title>
 
-  <!-- A-Frame first, then MindAR -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
@@ -34,6 +33,22 @@
       width: 100% !important; height: 100% !important;
       z-index: 1 !important;
       background: transparent !important;
+    }
+
+    /* Version badge - always visible top-left */
+    #version-badge {
+      position: fixed;
+      top: 12px; left: 12px;
+      background: rgba(255, 119, 85, 0.85);
+      color: #fff;
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: bold;
+      padding: 5px 10px;
+      border-radius: 6px;
+      z-index: 99999;
+      pointer-events: none;
+      letter-spacing: 0.5px;
     }
 
     #loading-overlay {
@@ -86,6 +101,9 @@
 </head>
 <body>
 
+  <!-- Version badge: bump this number every update -->
+  <div id="version-badge">v0.4</div>
+
   <div id="loading-overlay">
     <div class="spinner"></div>
     <p>Starting AR...</p>
@@ -112,25 +130,23 @@
 
     <a-entity mindar-image-target="targetIndex: 0">
 
-      <!-- Video 1 — green screen chromakey via custom component -->
-      <a-entity
+      <!-- Video 1 — plain video, no chromakey, position 0 0 0 for testing -->
+      <a-video
         id="vid1-entity"
-        green-video="videoId: vid1"
-        geometry="primitive: plane; width: 1; height: 1;"
-        position="0.05 -0.03 0"
-        scale="0.82 0.82 0.82"
+        src="#vid1"
+        width="1" height="1"
+        position="0 0 0"
         visible="true"
-      ></a-entity>
+      ></a-video>
 
       <!-- Video 2 -->
-      <a-entity
+      <a-video
         id="vid2-entity"
-        green-video="videoId: vid2"
-        geometry="primitive: plane; width: 1; height: 1;"
-        position="0.05 -0.03 0"
-        scale="0.82 0.82 0.82"
+        src="#vid2"
+        width="1" height="1"
+        position="0 0 0"
         visible="false"
-      ></a-entity>
+      ></a-video>
 
     </a-entity>
 
@@ -139,85 +155,6 @@
   </a-scene>
 
   <script>
-    // ─── Custom green-screen video component ──────────────────────────────────
-    // Renders a video element onto a plane mesh using THREE.VideoTexture
-    // with a custom GLSL shader that removes green (0,1,0) pixels
-    AFRAME.registerComponent('green-video', {
-      schema: {
-        videoId:    { type: 'string',  default: '' },
-        keyColor:   { type: 'color',   default: '#00ff00' },
-        similarity: { type: 'number',  default: 0.4 },
-        smoothness: { type: 'number',  default: 0.08 },
-      },
-
-      init: function () {
-        var self = this;
-        var videoEl = document.getElementById(this.data.videoId);
-        if (!videoEl) { console.warn('green-video: video not found', this.data.videoId); return; }
-
-        videoEl.play().catch(function(){});
-
-        var texture = new THREE.VideoTexture(videoEl);
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        texture.format    = THREE.RGBAFormat;
-
-        // Parse key color
-        var c = new THREE.Color(this.data.keyColor);
-
-        var material = new THREE.ShaderMaterial({
-          uniforms: {
-            map:        { value: texture },
-            keyColor:   { value: new THREE.Vector3(c.r, c.g, c.b) },
-            similarity: { value: this.data.similarity },
-            smoothness: { value: this.data.smoothness },
-          },
-          vertexShader: `
-            varying vec2 vUv;
-            void main() {
-              vUv = uv;
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-          `,
-          fragmentShader: `
-            uniform sampler2D map;
-            uniform vec3      keyColor;
-            uniform float     similarity;
-            uniform float     smoothness;
-            varying vec2      vUv;
-
-            void main() {
-              vec4 color = texture2D(map, vUv);
-              float diff = length(color.rgb - keyColor);
-              float alpha = smoothstep(similarity - smoothness, similarity + smoothness, diff);
-              gl_FragColor = vec4(color.rgb, color.a * alpha);
-            }
-          `,
-          transparent: true,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-        });
-
-        // Wait for mesh to be ready then apply material
-        function applyMaterial() {
-          var mesh = self.el.getObject3D('mesh');
-          if (mesh) {
-            mesh.material = material;
-          }
-        }
-
-        if (this.el.getObject3D('mesh')) {
-          applyMaterial();
-        } else {
-          this.el.addEventListener('object3dset', applyMaterial);
-          // Also try on loaded
-          this.el.sceneEl.addEventListener('loaded', applyMaterial);
-          setTimeout(applyMaterial, 500);
-        }
-      },
-    });
-    // ─────────────────────────────────────────────────────────────────────────
-
     var overlay   = document.getElementById('loading-overlay');
     var scanHint  = document.getElementById('scan-hint');
     var toggleBtn = document.getElementById('toggle-btn');
@@ -227,9 +164,9 @@
       overlay.style.opacity = '0';
       setTimeout(function() { overlay.style.display = 'none'; }, 700);
       scanHint.style.display = 'block';
-      // Ensure camera video stays visible
+      // Keep the AR camera feed video visible, not the asset videos
       document.querySelectorAll('video').forEach(function(v) {
-        if (!v.id || v.id === '') { // MindAR's camera feed video has no id
+        if (!v.id) {
           v.style.visibility = 'visible';
           v.style.opacity = '1';
           v.style.zIndex = '0';
@@ -244,18 +181,19 @@
     });
 
     var targetEl = document.querySelector('[mindar-image-target]');
+
     targetEl.addEventListener('targetFound', function() {
       scanHint.style.display = 'none';
       toggleBtn.style.display = 'block';
       document.getElementById('vid1').play().catch(function(){});
       document.getElementById('vid2').play().catch(function(){});
     });
+
     targetEl.addEventListener('targetLost', function() {
       scanHint.style.display = 'block';
       toggleBtn.style.display = 'none';
     });
 
-    // Toggle between videos
     var showingVid1 = true;
     toggleBtn.addEventListener('click', function() {
       showingVid1 = !showingVid1;
