@@ -16,7 +16,8 @@
       position: fixed !important; top: 0 !important; left: 0 !important;
       width: 100% !important; height: 100% !important;
     }
-    video {
+    /* Only apply the global video fix to the AR camera feed (no id) */
+    video:not([id]) {
       position: fixed !important; top: 0 !important; left: 0 !important;
       width: 100% !important; height: 100% !important;
       object-fit: cover !important; z-index: 0 !important;
@@ -71,7 +72,6 @@
       font-family: -apple-system, sans-serif; font-size: 15px;
       pointer-events: none; z-index: 9998; display: none; white-space: nowrap;
     }
-
     #toggle-btn {
       position: fixed; bottom: 36px; left: 50%;
       transform: translateX(-50%);
@@ -83,39 +83,27 @@
       box-shadow: 0 4px 20px rgba(255,119,85,0.4);
     }
 
-    /* METHOD B: UI video fixed bottom-left corner */
-    #ui-video-wrap {
+    /* ── HTML overlay video on marker ── */
+    /* Sits above canvas (z-index 2), tracks marker position via JS transform */
+    .marker-video {
       position: fixed;
-      bottom: 16px; left: 16px;
-      width: 120px; height: 80px;
-      border-radius: 8px; overflow: hidden;
-      border: 2px solid rgba(255,119,85,0.7);
-      z-index: 9997;
-      display: none; /* shown after tap */
-      background: #000;
-    }
-    #ui-video-wrap video {
-      position: absolute !important;
-      top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      object-fit: cover !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      z-index: 1 !important;
-    }
-    #ui-video-label {
-      position: absolute; top: 4px; left: 6px;
-      font-size: 10px; color: #fff; font-family: monospace;
-      background: rgba(0,0,0,0.5); padding: 1px 4px; border-radius: 3px;
-      z-index: 2; pointer-events: none;
+      /* start centered, JS will update transform-origin + transform */
+      top: 50%; left: 50%;
+      width: 260px; height: 260px;
+      margin-left: -130px; margin-top: -130px;
+      z-index: 2;
+      display: none;
+      pointer-events: none;
+      border-radius: 4px;
+      object-fit: cover;
+      transform-origin: center center;
     }
   </style>
 </head>
 <body>
 
-  <div id="version-badge">v0.8</div>
+  <div id="version-badge">v0.9</div>
 
-  <!-- Tap to start -->
   <div id="tap-start">
     <div class="big">👆</div>
     <h2>Tap to Start AR</h2>
@@ -130,14 +118,20 @@
   <div id="scan-hint">📷 Point at the target image</div>
   <button id="toggle-btn">Toggle Video</button>
 
-  <!-- METHOD B: UI corner video (native HTML video, no A-Frame) -->
-  <div id="ui-video-wrap">
-    <span id="ui-video-label">METHOD B</span>
-    <video id="ui-vid"
-      src="assets/Jepah_1.mp4"
-      muted playsinline loop
-      crossorigin="anonymous"></video>
-  </div>
+  <!--
+    THE KEY INSIGHT:
+    A-Frame video planes don't work reliably on mobile.
+    Instead: raw HTML <video> elements are positioned over the marker
+    using CSS + the marker's projected screen position from Three.js.
+    This is the same technique as Method B but tracked to the marker.
+  -->
+  <video id="vid1" class="marker-video"
+    src="assets/Jepah_1.mp4"
+    muted playsinline loop crossorigin="anonymous"></video>
+
+  <video id="vid2" class="marker-video"
+    src="assets/Jepah_2.mp4"
+    muted playsinline loop crossorigin="anonymous"></video>
 
   <a-scene
     mindar-image="imageTargetSrc: assets/targets.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no;"
@@ -146,93 +140,51 @@
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
   >
-    <a-assets>
-      <video id="vid1" src="assets/Jepah_1.mp4"
-        preload="auto" muted playsinline loop crossorigin="anonymous"></video>
-      <video id="vid2" src="assets/Jepah_2.mp4"
-        preload="auto" muted playsinline loop crossorigin="anonymous"></video>
-    </a-assets>
-
+    <!-- Invisible anchor — only used to get marker world position -->
     <a-camera id="main-cam" position="0 0 0"
-      look-controls="enabled: false" wasd-controls="enabled: false">
+      look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
 
-      <!-- METHOD A: tiny plane as child of camera, always in view -->
-      <!-- positioned slightly down-right so it's not center-blocking -->
-      <a-plane
-        id="cam-vid-plane"
-        src="#vid1"
-        material="shader: flat; src: #vid1; side: double;"
-        width="0.15" height="0.1"
-        position="0.12 -0.09 -0.3"
-        visible="false"
-      ></a-plane>
-
-    </a-camera>
-
-    <!-- IMAGE TARGET: video planes on marker -->
-    <a-entity mindar-image-target="targetIndex: 0">
-      <a-plane
-        id="vid1-plane"
-        src="#vid1"
-        material="shader: flat; src: #vid1; side: double;"
-        width="1" height="1"
-        position="0 0 0"
-        visible="true"
-      ></a-plane>
-
-      <a-plane
-        id="vid2-plane"
-        src="#vid2"
-        material="shader: flat; src: #vid2; side: double;"
-        width="1" height="1"
-        position="0 0 0"
-        visible="false"
-      ></a-plane>
+    <a-entity id="marker-anchor" mindar-image-target="targetIndex: 0">
+      <!-- Invisible reference point at center of marker -->
+      <a-entity id="marker-center" position="0 0 0"></a-entity>
     </a-entity>
 
     <a-light type="ambient" color="#fff" intensity="1"></a-light>
   </a-scene>
 
   <script>
-    var tapScreen  = document.getElementById('tap-start');
-    var loadingEl  = document.getElementById('loading-overlay');
-    var scanHint   = document.getElementById('scan-hint');
-    var toggleBtn  = document.getElementById('toggle-btn');
-    var scene      = document.querySelector('a-scene');
-    var vid1El     = document.getElementById('vid1');
-    var vid2El     = document.getElementById('vid2');
-    var uiVid      = document.getElementById('ui-vid');
-    var uiWrap     = document.getElementById('ui-video-wrap');
-    var camPlane   = document.getElementById('cam-vid-plane');
+    var tapScreen   = document.getElementById('tap-start');
+    var loadingEl   = document.getElementById('loading-overlay');
+    var scanHint    = document.getElementById('scan-hint');
+    var toggleBtn   = document.getElementById('toggle-btn');
+    var scene       = document.querySelector('a-scene');
+    var vid1El      = document.getElementById('vid1');
+    var vid2El      = document.getElementById('vid2');
+    var markerAnchor = document.getElementById('marker-anchor');
+    var markerCenter = document.getElementById('marker-center');
+
+    var markerFound  = false;
+    var showingVid1  = true;
 
     // ── Tap to start ──────────────────────────────────────────────────────
     tapScreen.addEventListener('click', function () {
       tapScreen.style.display = 'none';
       loadingEl.style.display = 'flex';
 
-      // Play ALL videos on user gesture (unlocks mobile autoplay)
       vid1El.play().catch(function(){});
       vid2El.play().catch(function(){});
-      uiVid.play().catch(function(){});
 
-      // Show METHOD B ui video
-      uiWrap.style.display = 'block';
-
-      // Show METHOD A cam plane
-      camPlane.setAttribute('visible', true);
-
-      // Start MindAR
-      scene.addEventListener('loaded', function () {
-        var sys = scene.systems['mindar-image-system'];
-        if (sys) { sys.start(); }
-      }, { once: true });
-
-      // If scene already loaded, start immediately
       if (scene.hasLoaded) {
-        var sys = scene.systems['mindar-image-system'];
-        if (sys) { sys.start(); }
+        startAR();
+      } else {
+        scene.addEventListener('loaded', startAR, { once: true });
       }
     });
+
+    function startAR() {
+      var sys = scene.systems['mindar-image-system'];
+      if (sys) { sys.start(); }
+    }
 
     // ── AR ready ──────────────────────────────────────────────────────────
     function hideLoading() {
@@ -246,28 +198,111 @@
       setTimeout(hideLoading, 10000);
     });
 
-    // ── Target found/lost ─────────────────────────────────────────────────
+    // ── Target found / lost ───────────────────────────────────────────────
     scene.addEventListener('loaded', function () {
-      var target = document.querySelector('[mindar-image-target]');
-      if (!target) return;
-      target.addEventListener('targetFound', function () {
+      markerAnchor.addEventListener('targetFound', function () {
+        markerFound = true;
         scanHint.style.display = 'none';
         toggleBtn.style.display = 'block';
-        vid1El.play().catch(function(){});
-        vid2El.play().catch(function(){});
+        // Show the active video overlay
+        var activeVid = showingVid1 ? vid1El : vid2El;
+        activeVid.style.display = 'block';
+        activeVid.play().catch(function(){});
       });
-      target.addEventListener('targetLost', function () {
+
+      markerAnchor.addEventListener('targetLost', function () {
+        markerFound = false;
         scanHint.style.display = 'block';
         toggleBtn.style.display = 'none';
+        vid1El.style.display = 'none';
+        vid2El.style.display = 'none';
       });
     });
 
-    // ── Toggle button ─────────────────────────────────────────────────────
-    var showingVid1 = true;
+    // ── Toggle ────────────────────────────────────────────────────────────
     toggleBtn.addEventListener('click', function () {
       showingVid1 = !showingVid1;
-      document.getElementById('vid1-plane').setAttribute('visible', showingVid1);
-      document.getElementById('vid2-plane').setAttribute('visible', !showingVid1);
+      if (showingVid1) {
+        vid1El.style.display = 'block';
+        vid2El.style.display = 'none';
+        vid1El.play().catch(function(){});
+      } else {
+        vid1El.style.display = 'none';
+        vid2El.style.display = 'block';
+        vid2El.play().catch(function(){});
+      }
+    });
+
+    // ── Track marker position every frame ────────────────────────────────
+    // Projects the marker's 3D world position to 2D screen coordinates
+    // then positions the HTML video element there via CSS transform
+    var _vec3   = new THREE.Vector3();
+    var _canvas, _cam3D;
+
+    function trackMarker() {
+      requestAnimationFrame(trackMarker);
+      if (!markerFound) return;
+
+      // Get Three.js camera and renderer on first valid frame
+      if (!_cam3D) {
+        var camEl = document.getElementById('main-cam');
+        if (!camEl || !camEl.object3D) return;
+        _cam3D = camEl.getObject3D('camera') || camEl.object3D.children[0];
+        if (!_cam3D) return;
+      }
+      if (!_canvas) {
+        _canvas = document.querySelector('canvas');
+        if (!_canvas) return;
+      }
+
+      // Get the marker center world position
+      var centerEl = document.getElementById('marker-center');
+      if (!centerEl || !centerEl.object3D) return;
+
+      centerEl.object3D.getWorldPosition(_vec3);
+
+      // Project to normalized device coordinates
+      _vec3.project(_cam3D);
+
+      // Convert NDC to screen pixels
+      var W = window.innerWidth;
+      var H = window.innerHeight;
+      var screenX = (_vec3.x *  0.5 + 0.5) * W;
+      var screenY = (_vec3.y * -0.5 + 0.5) * H;
+
+      // Marker scale: estimate based on distance (z after project = depth)
+      // closer = bigger. Tune the 260 base size here.
+      var depth = markerAnchor.object3D
+        ? markerAnchor.object3D.position.length()
+        : 1;
+      var size = Math.max(80, Math.min(600, 260));
+
+      var tx = screenX - size / 2;
+      var ty = screenY - size / 2;
+
+      var styleStr = 'display:block; left:0; top:0; margin:0; width:' + size + 'px; height:' + size + 'px; transform: translate(' + tx + 'px,' + ty + 'px);';
+
+      if (showingVid1 && vid1El.style.display !== 'none') {
+        vid1El.style.cssText = vid1El.style.cssText; // keep display
+        vid1El.style.left    = '0';
+        vid1El.style.top     = '0';
+        vid1El.style.margin  = '0';
+        vid1El.style.width   = size + 'px';
+        vid1El.style.height  = size + 'px';
+        vid1El.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';
+      } else if (!showingVid1 && vid2El.style.display !== 'none') {
+        vid2El.style.left    = '0';
+        vid2El.style.top     = '0';
+        vid2El.style.margin  = '0';
+        vid2El.style.width   = size + 'px';
+        vid2El.style.height  = size + 'px';
+        vid2El.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';
+      }
+    }
+
+    // Start tracking loop after scene loads
+    scene.addEventListener('loaded', function () {
+      trackMarker();
     });
   </script>
 
