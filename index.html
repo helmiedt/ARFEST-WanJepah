@@ -5,27 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Arfest Wanjepah AR</title>
 
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <!-- MindAR Three.js version (no A-Frame at all) -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-    a-scene {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-    }
-    video {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      object-fit: cover !important; z-index: 0 !important;
-      display: block !important; visibility: visible !important; opacity: 1 !important;
-    }
-    canvas {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      z-index: 1 !important; background: transparent !important;
-    }
 
     #version-badge {
       position: fixed; top: 12px; left: 12px;
@@ -49,6 +34,7 @@
     }
     #loading-overlay p { font-size: 16px; opacity: 0.8; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
     #scan-hint {
       position: fixed; bottom: 100px; left: 50%;
       transform: translateX(-50%);
@@ -71,147 +57,108 @@
 </head>
 <body>
 
-  <div id="version-badge">v0.5</div>
+  <div id="version-badge">v0.6</div>
   <div id="loading-overlay"><div class="spinner"></div><p>Starting AR...</p></div>
   <div id="scan-hint">📷 Point at the target image</div>
   <button id="toggle-btn">Toggle Video</button>
 
-  <a-scene
-    mindar-image="imageTargetSrc: assets/targets.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: no;"
-    color-space="sRGB"
-    renderer="colorManagement: true; alpha: true"
-    vr-mode-ui="enabled: false"
-    device-orientation-permission-ui="enabled: false"
-  >
-    <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
-
-    <!-- Target anchor — Three.js meshes injected here by script -->
-    <a-entity id="ar-target" mindar-image-target="targetIndex: 0"></a-entity>
-
-    <a-light type="ambient" color="#fff" intensity="1"></a-light>
-  </a-scene>
+  <!-- Hidden video elements — autoplay muted required for mobile -->
+  <video id="vid1" src="assets/Jepah_1.mp4"
+    autoplay muted playsinline loop crossorigin="anonymous"
+    style="display:none"></video>
+  <video id="vid2" src="assets/Jepah_2.mp4"
+    autoplay muted playsinline loop crossorigin="anonymous"
+    style="display:none"></video>
 
   <script>
-    // ── Register component BEFORE scene loads ──────────────────────────────
-    AFRAME.registerComponent('threejs-video-plane', {
-      schema: {
-        vid1: { type: 'string', default: '' },
-        vid2: { type: 'string', default: '' },
-      },
-      init: function () {
-        var self = this;
-        this.mesh1 = null;
-        this.mesh2 = null;
-        this.showingVid1 = true;
-
-        // Wait for scene to be fully ready
-        this.el.sceneEl.addEventListener('renderstart', function () {
-          self._buildPlanes();
-        });
-      },
-
-      _buildPlanes: function () {
-        var v1el = document.getElementById(this.data.vid1);
-        var v2el = document.getElementById(this.data.vid2);
-        if (!v1el || !v2el) {
-          console.error('threejs-video-plane: video elements not found');
-          return;
-        }
-
-        v1el.play().catch(function(){});
-        v2el.play().catch(function(){});
-
-        var tex1 = new THREE.VideoTexture(v1el);
-        tex1.minFilter = THREE.LinearFilter;
-        tex1.magFilter = THREE.LinearFilter;
-
-        var tex2 = new THREE.VideoTexture(v2el);
-        tex2.minFilter = THREE.LinearFilter;
-        tex2.magFilter = THREE.LinearFilter;
-
-        var geo = new THREE.PlaneGeometry(1, 1);
-
-        var mat1 = new THREE.MeshBasicMaterial({
-          map: tex1,
-          side: THREE.DoubleSide,
-          transparent: false,
-          depthWrite: true,
-        });
-        var mat2 = new THREE.MeshBasicMaterial({
-          map: tex2,
-          side: THREE.DoubleSide,
-          transparent: false,
-          depthWrite: true,
-        });
-
-        this.mesh1 = new THREE.Mesh(geo, mat1);
-        this.mesh2 = new THREE.Mesh(geo, mat2);
-
-        // Position at dead center of target for testing
-        this.mesh1.position.set(0, 0, 0);
-        this.mesh2.position.set(0, 0, 0);
-
-        // mesh2 hidden initially
-        this.mesh2.visible = false;
-
-        // Attach to this entity's Three.js object
-        var obj = this.el.object3D;
-        obj.add(this.mesh1);
-        obj.add(this.mesh2);
-
-        console.log('[v0.5] Video planes built and attached to target');
-      },
-
-      toggle: function () {
-        if (!this.mesh1 || !this.mesh2) return;
-        this.showingVid1 = !this.showingVid1;
-        this.mesh1.visible =  this.showingVid1;
-        this.mesh2.visible = !this.showingVid1;
-      },
-    });
-    // ──────────────────────────────────────────────────────────────────────
-
-    var overlay   = document.getElementById('loading-overlay');
-    var scanHint  = document.getElementById('scan-hint');
-    var toggleBtn = document.getElementById('toggle-btn');
-    var scene     = document.querySelector('a-scene');
-    var targetEl  = document.getElementById('ar-target');
-
-    // Attach component to target entity
-    targetEl.setAttribute('threejs-video-plane', 'vid1: vid1; vid2: vid2');
+    const overlay   = document.getElementById('loading-overlay');
+    const scanHint  = document.getElementById('scan-hint');
+    const toggleBtn = document.getElementById('toggle-btn');
+    const vid1El    = document.getElementById('vid1');
+    const vid2El    = document.getElementById('vid2');
 
     function hideOverlay() {
       overlay.style.opacity = '0';
-      setTimeout(function () { overlay.style.display = 'none'; }, 700);
+      setTimeout(() => overlay.style.display = 'none', 700);
       scanHint.style.display = 'block';
     }
 
-    scene.addEventListener('loaded', function () {
-      var sys = scene.systems['mindar-image-system'];
-      if (sys) { sys.el.addEventListener('arReady', hideOverlay); }
-      setTimeout(hideOverlay, 8000);
-    });
+    const start = async () => {
+      // ── Init MindARThree ──────────────────────────────────────────────────
+      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        container: document.body,
+        imageTargetSrc: 'assets/targets.mind',
+        maxTrack: 1,
+        uiLoading: 'no',
+        uiError: 'no',
+        uiScanning: 'no',
+      });
 
-    targetEl.addEventListener('targetFound', function () {
-      scanHint.style.display = 'none';
-      toggleBtn.style.display = 'block';
-    });
-    targetEl.addEventListener('targetLost', function () {
-      scanHint.style.display = 'block';
-      toggleBtn.style.display = 'none';
-    });
+      const { renderer, scene, camera } = mindarThree;
 
-    toggleBtn.addEventListener('click', function () {
-      var comp = targetEl.components['threejs-video-plane'];
-      if (comp) comp.toggle();
+      // ── Video textures ────────────────────────────────────────────────────
+      const tex1 = new THREE.VideoTexture(vid1El);
+      tex1.minFilter = THREE.LinearFilter;
+      tex1.magFilter = THREE.LinearFilter;
+      tex1.format    = THREE.RGBAFormat;
+
+      const tex2 = new THREE.VideoTexture(vid2El);
+      tex2.minFilter = THREE.LinearFilter;
+      tex2.magFilter = THREE.LinearFilter;
+      tex2.format    = THREE.RGBAFormat;
+
+      // ── Plane meshes ──────────────────────────────────────────────────────
+      const geo  = new THREE.PlaneGeometry(1, 1);
+
+      const mat1 = new THREE.MeshBasicMaterial({ map: tex1, side: THREE.DoubleSide });
+      const mat2 = new THREE.MeshBasicMaterial({ map: tex2, side: THREE.DoubleSide });
+
+      const plane1 = new THREE.Mesh(geo, mat1);
+      const plane2 = new THREE.Mesh(geo, mat2);
+      plane1.position.set(0, 0, 0);
+      plane2.position.set(0, 0, 0);
+      plane2.visible = false;
+
+      // ── Anchor (image target 0) ───────────────────────────────────────────
+      const anchor = mindarThree.addAnchor(0);
+      anchor.group.add(plane1);
+      anchor.group.add(plane2);
+
+      anchor.onTargetFound = () => {
+        scanHint.style.display = 'none';
+        toggleBtn.style.display = 'block';
+        vid1El.play().catch(() => {});
+        vid2El.play().catch(() => {});
+      };
+
+      anchor.onTargetLost = () => {
+        scanHint.style.display = 'block';
+        toggleBtn.style.display = 'none';
+      };
+
+      // ── Toggle button ─────────────────────────────────────────────────────
+      let showingVid1 = true;
+      toggleBtn.addEventListener('click', () => {
+        showingVid1 = !showingVid1;
+        plane1.visible =  showingVid1;
+        plane2.visible = !showingVid1;
+      });
+
+      // ── Start AR ──────────────────────────────────────────────────────────
+      await mindarThree.start();
+      hideOverlay();
+
+      // ── Render loop ───────────────────────────────────────────────────────
+      renderer.setAnimationLoop(() => {
+        renderer.render(scene, camera);
+      });
+    };
+
+    start().catch(err => {
+      console.error('AR start error:', err);
+      hideOverlay();
     });
   </script>
-
-  <!-- Video elements outside a-assets to avoid A-Frame material system -->
-  <video id="vid1" autoplay muted playsinline loop crossorigin="anonymous"
-    src="assets/Jepah_1.mp4" preload="auto" style="display:none; position:absolute;"></video>
-  <video id="vid2" autoplay muted playsinline loop crossorigin="anonymous"
-    src="assets/Jepah_2.mp4" preload="auto" style="display:none; position:absolute;"></video>
 
 </body>
 </html>
