@@ -21,16 +21,23 @@
       object-fit: cover !important; z-index: 0 !important;
       display: block !important; visibility: visible !important; opacity: 1 !important;
     }
-    canvas {
-      position: fixed !important; top: 0 !important; left: 0 !important;
+    canvas { position: fixed !important; top: 0 !important; left: 0 !important;
       width: 100% !important; height: 100% !important;
-      z-index: 1 !important; background: transparent !important;
-    }
+      z-index: 1 !important; background: transparent !important; }
     #version-badge {
       position: fixed; top: 12px; left: 12px;
       background: rgba(255,119,85,0.9); color: #fff;
       font-family: monospace; font-size: 13px; font-weight: bold;
       padding: 5px 10px; border-radius: 6px; z-index: 99999; pointer-events: none;
+    }
+    /* Debug panel */
+    #dbg {
+      position: fixed; top: 44px; left: 12px;
+      background: rgba(0,0,0,0.75); color: #0f0;
+      font-family: monospace; font-size: 11px;
+      padding: 6px 8px; border-radius: 6px;
+      z-index: 99999; pointer-events: none;
+      max-width: 240px; line-height: 1.6;
     }
     #tap-start {
       position: fixed; inset: 0; background: rgba(0,0,0,0.92);
@@ -48,56 +55,45 @@
       align-items: center; justify-content: center;
       z-index: 9999; color: #fff; font-family: -apple-system, sans-serif;
     }
-    .spinner {
-      width: 52px; height: 52px;
+    .spinner { width: 52px; height: 52px;
       border: 4px solid rgba(255,255,255,0.15);
       border-top-color: #ff7755; border-radius: 50%;
-      animation: spin 0.8s linear infinite; margin-bottom: 18px;
-    }
+      animation: spin 0.8s linear infinite; margin-bottom: 18px; }
     #loading-overlay p { font-size: 16px; opacity: 0.8; }
     @keyframes spin { to { transform: rotate(360deg); } }
     #scan-hint {
-      position: fixed; bottom: 100px; left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.6); color: #fff;
-      padding: 12px 24px; border-radius: 99px;
-      font-family: -apple-system, sans-serif; font-size: 15px;
+      position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.6); color: #fff; padding: 12px 24px;
+      border-radius: 99px; font-family: -apple-system, sans-serif; font-size: 15px;
       pointer-events: none; z-index: 9998; display: none;
     }
     #toggle-btn {
-      position: fixed; bottom: 36px; left: 50%;
-      transform: translateX(-50%);
+      position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
       background: rgba(255,119,85,0.92); color: #fff; border: none;
-      border-radius: 99px; padding: 14px 40px;
-      font-size: 16px; font-weight: 700; font-family: -apple-system, sans-serif;
-      cursor: pointer; z-index: 9998; display: none;
+      border-radius: 99px; padding: 14px 40px; font-size: 16px; font-weight: 700;
+      font-family: -apple-system, sans-serif; cursor: pointer; z-index: 9998; display: none;
       box-shadow: 0 4px 20px rgba(255,119,85,0.4);
     }
   </style>
 </head>
 <body>
 
-  <div id="version-badge">v1.1</div>
+  <div id="version-badge">v1.2-debug</div>
+  <div id="dbg">waiting tap...</div>
 
   <div id="tap-start">
     <div class="big">👆</div>
     <h2>Tap to Start AR</h2>
     <p>Aim at the mural artwork</p>
   </div>
-
-  <div id="loading-overlay">
-    <div class="spinner"></div>
-    <p>Starting AR...</p>
-  </div>
-
+  <div id="loading-overlay"><div class="spinner"></div><p>Starting AR...</p></div>
   <div id="scan-hint">📷 Aim at the mural artwork</div>
   <button id="toggle-btn">Toggle Video</button>
 
-  <!-- Hidden source videos — played via user tap to unlock mobile autoplay -->
   <video id="vid1" src="assets/Jepah_1.mp4" muted playsinline loop crossorigin="anonymous"
-    style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;"></video>
+    style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;"></video>
   <video id="vid2" src="assets/Jepah_2.mp4" muted playsinline loop crossorigin="anonymous"
-    style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;"></video>
+    style="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;"></video>
 
   <a-scene
     mindar-image="imageTargetSrc: assets/targets.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no;"
@@ -106,149 +102,158 @@
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
   >
-    <a-camera position="0 0 0"
-      look-controls="enabled: false"
-      wasd-controls="enabled: false">
-    </a-camera>
-
-    <!-- Target: canvas-texture plane -->
+    <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
     <a-entity mindar-image-target="targetIndex: 0">
       <a-entity id="vid-plane"
         geometry="primitive: plane; width: 1; height: 1;"
         position="0 0 0"
-        canvas-video-mat
-      ></a-entity>
+        canvas-video-mat>
+      </a-entity>
     </a-entity>
-
     <a-light type="ambient" color="#fff" intensity="1"></a-light>
   </a-scene>
 
   <script>
-    /*
-      canvas-video-mat component:
-      - Creates a 2D canvas, draws video frames onto it every tick
-      - Uses that canvas as a THREE.CanvasTexture (NOT VideoTexture)
-      - CanvasTexture works reliably on mobile where VideoTexture fails
-      - Reads which video to show from window.activeVidEl
-    */
+    var dbg = document.getElementById('dbg');
+    function log(msg) {
+      dbg.innerHTML = msg + '<br>' + dbg.innerHTML;
+      dbg.innerHTML = dbg.innerHTML.split('<br>').slice(0,8).join('<br>');
+    }
+
+    var vid1El = document.getElementById('vid1');
+    var vid2El = document.getElementById('vid2');
+    window.activeVidEl = vid1El;
+
     AFRAME.registerComponent('canvas-video-mat', {
       init: function () {
-        // Create offscreen canvas
+        log('component init');
         this.cvs = document.createElement('canvas');
-        this.cvs.width  = 512;
-        this.cvs.height = 512;
+        this.cvs.width = 512; this.cvs.height = 512;
         this.ctx = this.cvs.getContext('2d');
-
-        // Fill black initially
-        this.ctx.fillStyle = '#000';
+        this.ctx.fillStyle = '#ff0000'; // red = canvas is alive
         this.ctx.fillRect(0, 0, 512, 512);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '40px monospace';
+        this.ctx.fillText('CANVAS OK', 50, 256);
 
-        // THREE.CanvasTexture — reads from canvas pixels, always works on mobile
         this.texture = new THREE.CanvasTexture(this.cvs);
         this.texture.minFilter = THREE.LinearFilter;
         this.texture.magFilter = THREE.LinearFilter;
+        this.tickCount = 0;
 
-        // Apply to mesh
         var self = this;
-        var applyMat = function () {
+        var tryApply = function() {
           var mesh = self.el.getObject3D('mesh');
-          if (!mesh) return;
+          if (!mesh) {
+            log('mesh not ready, retry...');
+            setTimeout(tryApply, 200);
+            return;
+          }
+          log('mesh found! applying mat');
           mesh.material = new THREE.MeshBasicMaterial({
             map: self.texture,
             side: THREE.DoubleSide,
             depthWrite: false,
           });
           mesh.material.needsUpdate = true;
+          self.texture.needsUpdate = true;
+          log('mat applied!');
         };
-
-        this.el.addEventListener('object3dset', applyMat);
-        setTimeout(applyMat, 100);
+        setTimeout(tryApply, 300);
       },
 
       tick: function () {
-        // Draw current video frame onto canvas every tick
+        this.tickCount++;
         var vid = window.activeVidEl;
-        if (!vid || vid.readyState < 2) return; // HAVE_CURRENT_DATA
-        try {
-          this.ctx.drawImage(vid, 0, 0, 512, 512);
+
+        // Debug every 60 ticks (~1 sec)
+        if (this.tickCount % 60 === 0) {
+          var rs = vid ? vid.readyState : 'no vid';
+          var paused = vid ? vid.paused : '?';
+          log('tick:' + this.tickCount + ' rs:' + rs + ' paused:' + paused);
+        }
+
+        if (!vid) return;
+
+        if (vid.readyState >= 2) {
+          try {
+            this.ctx.drawImage(vid, 0, 0, 512, 512);
+            this.texture.needsUpdate = true;
+          } catch(e) {
+            if (this.tickCount % 60 === 0) log('drawImg err:' + e.message);
+          }
+        } else {
+          // Video not ready — show colored canvas so we know plane exists
+          this.ctx.fillStyle = '#220066';
+          this.ctx.fillRect(0, 0, 512, 512);
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = '28px monospace';
+          this.ctx.fillText('vid loading', 50, 256);
+          this.ctx.fillText('rs:' + vid.readyState, 50, 300);
           this.texture.needsUpdate = true;
-        } catch(e) {}
+        }
       }
     });
 
-    // ─────────────────────────────────────────────────────────────────────
-    var tapScreen  = document.getElementById('tap-start');
-    var loadingEl  = document.getElementById('loading-overlay');
-    var scanHint   = document.getElementById('scan-hint');
-    var toggleBtn  = document.getElementById('toggle-btn');
-    var scene      = document.querySelector('a-scene');
-    var vid1El     = document.getElementById('vid1');
-    var vid2El     = document.getElementById('vid2');
-
-    // Active video that canvas-video-mat reads from
-    window.activeVidEl = vid1El;
+    // ── UI logic ──────────────────────────────────────────────────────────
+    var tapScreen = document.getElementById('tap-start');
+    var loadingEl = document.getElementById('loading-overlay');
+    var scanHint  = document.getElementById('scan-hint');
+    var toggleBtn = document.getElementById('toggle-btn');
+    var scene     = document.querySelector('a-scene');
     var showingVid1 = true;
 
-    // ── Tap to start ──────────────────────────────────────────────────────
     tapScreen.addEventListener('click', function () {
       tapScreen.style.display = 'none';
       loadingEl.style.display = 'flex';
+      log('tap! playing vids...');
 
-      // Unlock videos on user gesture
-      vid1El.play().catch(function(){});
+      vid1El.play().then(function(){ log('vid1 playing rs:'+vid1El.readyState); })
+                   .catch(function(e){ log('vid1 err:'+e.message); });
       vid2El.play().catch(function(){});
 
-      if (scene.hasLoaded) {
-        startMindAR();
-      } else {
-        scene.addEventListener('loaded', startMindAR, { once: true });
-      }
+      if (scene.hasLoaded) { startMindAR(); }
+      else { scene.addEventListener('loaded', startMindAR, { once: true }); }
     });
 
     function startMindAR() {
+      log('starting MindAR...');
       var sys = scene.systems['mindar-image-system'];
-      if (sys) { sys.start(); }
+      if (sys) { sys.start(); } else { log('no mindar sys!'); }
     }
 
-    // ── AR ready ──────────────────────────────────────────────────────────
     scene.addEventListener('loaded', function () {
+      log('scene loaded');
       var sys = scene.systems['mindar-image-system'];
       if (sys) {
         sys.el.addEventListener('arReady', function () {
+          log('arReady!');
           loadingEl.style.opacity = '0';
-          setTimeout(function () { loadingEl.style.display = 'none'; }, 700);
+          setTimeout(function(){ loadingEl.style.display = 'none'; }, 700);
           scanHint.style.display = 'block';
         });
       }
-      setTimeout(function () {
-        loadingEl.style.display = 'none';
-        scanHint.style.display = 'block';
-      }, 12000);
-    });
+      setTimeout(function(){ loadingEl.style.display = 'none'; scanHint.style.display = 'block'; }, 12000);
 
-    // ── Target found / lost ───────────────────────────────────────────────
-    scene.addEventListener('loaded', function () {
       var target = document.querySelector('[mindar-image-target]');
-      if (!target) return;
-
       target.addEventListener('targetFound', function () {
+        log('TARGET FOUND!');
         scanHint.style.display = 'none';
         toggleBtn.style.display = 'block';
-        // Make sure active video is playing
         window.activeVidEl.play().catch(function(){});
       });
-
       target.addEventListener('targetLost', function () {
+        log('target lost');
         scanHint.style.display = 'block';
         toggleBtn.style.display = 'none';
       });
     });
 
-    // ── Toggle ────────────────────────────────────────────────────────────
     toggleBtn.addEventListener('click', function () {
       showingVid1 = !showingVid1;
       window.activeVidEl = showingVid1 ? vid1El : vid2El;
       window.activeVidEl.play().catch(function(){});
+      log('toggle -> vid' + (showingVid1 ? '1' : '2'));
     });
   </script>
 
