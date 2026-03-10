@@ -5,28 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Arfest Wanjepah AR</title>
 
-  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <!-- MindAR Three.js (no A-Frame — direct Three.js control) -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
 
-    a-scene {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-    }
-    /* Only apply the global video fix to the AR camera feed (no id) */
-    video:not([id]) {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      object-fit: cover !important; z-index: 0 !important;
-      display: block !important; visibility: visible !important; opacity: 1 !important;
-    }
-    canvas {
-      position: fixed !important; top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      z-index: 1 !important; background: transparent !important;
+    /* MindAR Three.js injects a container — make it fullscreen */
+    #ar-container {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
     }
 
     #version-badge {
@@ -49,8 +38,8 @@
     #tap-start p    { font-size: 14px; opacity: 0.6; }
 
     #loading-overlay {
-      position: fixed; inset: 0; background: #000;
-      display: flex; flex-direction: column;
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      display: none; flex-direction: column;
       align-items: center; justify-content: center;
       z-index: 9999; color: #fff;
       font-family: -apple-system, sans-serif; transition: opacity 0.6s;
@@ -70,8 +59,9 @@
       background: rgba(0,0,0,0.6); color: #fff;
       padding: 12px 24px; border-radius: 99px;
       font-family: -apple-system, sans-serif; font-size: 15px;
-      pointer-events: none; z-index: 9998; display: none; white-space: nowrap;
+      pointer-events: none; z-index: 9998; display: none;
     }
+
     #toggle-btn {
       position: fixed; bottom: 36px; left: 50%;
       transform: translateX(-50%);
@@ -82,228 +72,144 @@
       cursor: pointer; z-index: 9998; display: none;
       box-shadow: 0 4px 20px rgba(255,119,85,0.4);
     }
-
-    /* ── HTML overlay video on marker ── */
-    /* Sits above canvas (z-index 2), tracks marker position via JS transform */
-    .marker-video {
-      position: fixed;
-      /* start centered, JS will update transform-origin + transform */
-      top: 50%; left: 50%;
-      width: 260px; height: 260px;
-      margin-left: -130px; margin-top: -130px;
-      z-index: 2;
-      display: none;
-      pointer-events: none;
-      border-radius: 4px;
-      object-fit: cover;
-      transform-origin: center center;
-    }
   </style>
 </head>
 <body>
 
-  <div id="version-badge">v0.9</div>
+  <div id="version-badge">v1.0</div>
+
+  <!-- MindAR Three.js needs a container div -->
+  <div id="ar-container"></div>
 
   <div id="tap-start">
     <div class="big">👆</div>
     <h2>Tap to Start AR</h2>
-    <p>Camera + video will start</p>
+    <p>Aim camera at the mural artwork</p>
   </div>
 
-  <div id="loading-overlay" style="display:none;">
+  <div id="loading-overlay">
     <div class="spinner"></div>
     <p>Starting AR...</p>
   </div>
 
-  <div id="scan-hint">📷 Point at the target image</div>
+  <div id="scan-hint">📷 Aim at the mural artwork</div>
   <button id="toggle-btn">Toggle Video</button>
 
-  <!--
-    THE KEY INSIGHT:
-    A-Frame video planes don't work reliably on mobile.
-    Instead: raw HTML <video> elements are positioned over the marker
-    using CSS + the marker's projected screen position from Three.js.
-    This is the same technique as Method B but tracked to the marker.
-  -->
-  <video id="vid1" class="marker-video"
-    src="assets/Jepah_1.mp4"
-    muted playsinline loop crossorigin="anonymous"></video>
-
-  <video id="vid2" class="marker-video"
-    src="assets/Jepah_2.mp4"
-    muted playsinline loop crossorigin="anonymous"></video>
-
-  <a-scene
-    mindar-image="imageTargetSrc: assets/targets.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no;"
-    color-space="sRGB"
-    renderer="colorManagement: true; alpha: true"
-    vr-mode-ui="enabled: false"
-    device-orientation-permission-ui="enabled: false"
-  >
-    <!-- Invisible anchor — only used to get marker world position -->
-    <a-camera id="main-cam" position="0 0 0"
-      look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
-
-    <a-entity id="marker-anchor" mindar-image-target="targetIndex: 0">
-      <!-- Invisible reference point at center of marker -->
-      <a-entity id="marker-center" position="0 0 0"></a-entity>
-    </a-entity>
-
-    <a-light type="ambient" color="#fff" intensity="1"></a-light>
-  </a-scene>
+  <!-- Videos outside everything — plain HTML, unlocked by user tap -->
+  <video id="vid1" src="assets/Jepah_1.mp4"
+    muted playsinline loop crossorigin="anonymous"
+    style="display:none; position:absolute; width:1px; height:1px;"></video>
+  <video id="vid2" src="assets/Jepah_2.mp4"
+    muted playsinline loop crossorigin="anonymous"
+    style="display:none; position:absolute; width:1px; height:1px;"></video>
 
   <script>
-    var tapScreen   = document.getElementById('tap-start');
-    var loadingEl   = document.getElementById('loading-overlay');
-    var scanHint    = document.getElementById('scan-hint');
-    var toggleBtn   = document.getElementById('toggle-btn');
-    var scene       = document.querySelector('a-scene');
-    var vid1El      = document.getElementById('vid1');
-    var vid2El      = document.getElementById('vid2');
-    var markerAnchor = document.getElementById('marker-anchor');
-    var markerCenter = document.getElementById('marker-center');
+    var tapScreen  = document.getElementById('tap-start');
+    var loadingEl  = document.getElementById('loading-overlay');
+    var scanHint   = document.getElementById('scan-hint');
+    var toggleBtn  = document.getElementById('toggle-btn');
+    var vid1El     = document.getElementById('vid1');
+    var vid2El     = document.getElementById('vid2');
+    var showingVid1 = true;
 
-    var markerFound  = false;
-    var showingVid1  = true;
-
-    // ── Tap to start ──────────────────────────────────────────────────────
     tapScreen.addEventListener('click', function () {
       tapScreen.style.display = 'none';
       loadingEl.style.display = 'flex';
 
-      vid1El.play().catch(function(){});
-      vid2El.play().catch(function(){});
-
-      if (scene.hasLoaded) {
+      // Unlock video on user gesture — critical for iOS/Android
+      vid1El.play().then(function () {
+        // videos unlocked, now start AR
         startAR();
-      } else {
-        scene.addEventListener('loaded', startAR, { once: true });
-      }
+      }).catch(function () {
+        startAR();
+      });
+      vid2El.play().catch(function(){});
     });
 
     function startAR() {
-      var sys = scene.systems['mindar-image-system'];
-      if (sys) { sys.start(); }
-    }
+      // ── MindARThree setup ───────────────────────────────────────────────
+      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        container:        document.getElementById('ar-container'),
+        imageTargetSrc:   'assets/targets.mind',
+        maxTrack:         1,
+        uiLoading:        'no',
+        uiError:          'no',
+        uiScanning:       'no',
+      });
 
-    // ── AR ready ──────────────────────────────────────────────────────────
-    function hideLoading() {
-      loadingEl.style.opacity = '0';
-      setTimeout(function () { loadingEl.style.display = 'none'; }, 700);
-      scanHint.style.display = 'block';
-    }
-    scene.addEventListener('loaded', function () {
-      var sys = scene.systems['mindar-image-system'];
-      if (sys) { sys.el.addEventListener('arReady', hideLoading); }
-      setTimeout(hideLoading, 10000);
-    });
+      const { renderer, scene, camera } = mindarThree;
 
-    // ── Target found / lost ───────────────────────────────────────────────
-    scene.addEventListener('loaded', function () {
-      markerAnchor.addEventListener('targetFound', function () {
-        markerFound = true;
+      // ── Video textures (Method B proved this works on this device) ──────
+      const tex1 = new THREE.VideoTexture(vid1El);
+      tex1.minFilter = THREE.LinearFilter;
+      tex1.magFilter = THREE.LinearFilter;
+
+      const tex2 = new THREE.VideoTexture(vid2El);
+      tex2.minFilter = THREE.LinearFilter;
+      tex2.magFilter = THREE.LinearFilter;
+
+      // ── Plane geometry — matches original project: 1.2 x 1.2 units ─────
+      const geo = new THREE.PlaneGeometry(1.2, 1.2);
+
+      const mat1 = new THREE.MeshBasicMaterial({
+        map: tex1,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const mat2 = new THREE.MeshBasicMaterial({
+        map: tex2,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+
+      const plane1 = new THREE.Mesh(geo, mat1);
+      const plane2 = new THREE.Mesh(geo, mat2);
+
+      // Center on marker — original used position 0.05, -0.03, 0 and scale 0.82
+      // Start at 0,0,0 for testing first
+      plane1.position.set(0, 0, 0);
+      plane2.position.set(0, 0, 0);
+      plane2.visible = false;
+
+      // ── Anchor — attaches planes to marker index 0 ──────────────────────
+      const anchor = mindarThree.addAnchor(0);
+      anchor.group.add(plane1);
+      anchor.group.add(plane2);
+
+      anchor.onTargetFound = function () {
         scanHint.style.display = 'none';
         toggleBtn.style.display = 'block';
-        // Show the active video overlay
-        var activeVid = showingVid1 ? vid1El : vid2El;
-        activeVid.style.display = 'block';
-        activeVid.play().catch(function(){});
-      });
+        vid1El.play().catch(function(){});
+        vid2El.play().catch(function(){});
+      };
 
-      markerAnchor.addEventListener('targetLost', function () {
-        markerFound = false;
+      anchor.onTargetLost = function () {
         scanHint.style.display = 'block';
         toggleBtn.style.display = 'none';
-        vid1El.style.display = 'none';
-        vid2El.style.display = 'none';
+      };
+
+      // ── Toggle ───────────────────────────────────────────────────────────
+      toggleBtn.addEventListener('click', function () {
+        showingVid1 = !showingVid1;
+        plane1.visible =  showingVid1;
+        plane2.visible = !showingVid1;
       });
-    });
 
-    // ── Toggle ────────────────────────────────────────────────────────────
-    toggleBtn.addEventListener('click', function () {
-      showingVid1 = !showingVid1;
-      if (showingVid1) {
-        vid1El.style.display = 'block';
-        vid2El.style.display = 'none';
-        vid1El.play().catch(function(){});
-      } else {
-        vid1El.style.display = 'none';
-        vid2El.style.display = 'block';
-        vid2El.play().catch(function(){});
-      }
-    });
+      // ── Start AR + render loop ───────────────────────────────────────────
+      mindarThree.start().then(function () {
+        loadingEl.style.opacity = '0';
+        setTimeout(function () { loadingEl.style.display = 'none'; }, 700);
+        scanHint.style.display = 'block';
 
-    // ── Track marker position every frame ────────────────────────────────
-    // Projects the marker's 3D world position to 2D screen coordinates
-    // then positions the HTML video element there via CSS transform
-    var _vec3   = new THREE.Vector3();
-    var _canvas, _cam3D;
-
-    function trackMarker() {
-      requestAnimationFrame(trackMarker);
-      if (!markerFound) return;
-
-      // Get Three.js camera and renderer on first valid frame
-      if (!_cam3D) {
-        var camEl = document.getElementById('main-cam');
-        if (!camEl || !camEl.object3D) return;
-        _cam3D = camEl.getObject3D('camera') || camEl.object3D.children[0];
-        if (!_cam3D) return;
-      }
-      if (!_canvas) {
-        _canvas = document.querySelector('canvas');
-        if (!_canvas) return;
-      }
-
-      // Get the marker center world position
-      var centerEl = document.getElementById('marker-center');
-      if (!centerEl || !centerEl.object3D) return;
-
-      centerEl.object3D.getWorldPosition(_vec3);
-
-      // Project to normalized device coordinates
-      _vec3.project(_cam3D);
-
-      // Convert NDC to screen pixels
-      var W = window.innerWidth;
-      var H = window.innerHeight;
-      var screenX = (_vec3.x *  0.5 + 0.5) * W;
-      var screenY = (_vec3.y * -0.5 + 0.5) * H;
-
-      // Marker scale: estimate based on distance (z after project = depth)
-      // closer = bigger. Tune the 260 base size here.
-      var depth = markerAnchor.object3D
-        ? markerAnchor.object3D.position.length()
-        : 1;
-      var size = Math.max(80, Math.min(600, 260));
-
-      var tx = screenX - size / 2;
-      var ty = screenY - size / 2;
-
-      var styleStr = 'display:block; left:0; top:0; margin:0; width:' + size + 'px; height:' + size + 'px; transform: translate(' + tx + 'px,' + ty + 'px);';
-
-      if (showingVid1 && vid1El.style.display !== 'none') {
-        vid1El.style.cssText = vid1El.style.cssText; // keep display
-        vid1El.style.left    = '0';
-        vid1El.style.top     = '0';
-        vid1El.style.margin  = '0';
-        vid1El.style.width   = size + 'px';
-        vid1El.style.height  = size + 'px';
-        vid1El.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';
-      } else if (!showingVid1 && vid2El.style.display !== 'none') {
-        vid2El.style.left    = '0';
-        vid2El.style.top     = '0';
-        vid2El.style.margin  = '0';
-        vid2El.style.width   = size + 'px';
-        vid2El.style.height  = size + 'px';
-        vid2El.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';
-      }
+        renderer.setAnimationLoop(function () {
+          renderer.render(scene, camera);
+        });
+      }).catch(function (err) {
+        console.error('MindAR start error:', err);
+        loadingEl.style.display = 'none';
+        scanHint.style.display = 'block';
+      });
     }
-
-    // Start tracking loop after scene loads
-    scene.addEventListener('loaded', function () {
-      trackMarker();
-    });
   </script>
 
 </body>
