@@ -38,7 +38,7 @@
       font-family: monospace; font-size: 11px;
       padding: 6px 8px; border-radius: 6px;
       z-index: 99999; pointer-events: none;
-      max-width: 240px; line-height: 1.6;
+      max-width: 260px; line-height: 1.6;
     }
     #tap-start {
       position: fixed; inset: 0; background: rgba(0,0,0,0.92);
@@ -51,7 +51,7 @@
     #tap-start h2   { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
     #tap-start p    { font-size: 14px; opacity: 0.6; }
     #loading-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
       display: none; flex-direction: column;
       align-items: center; justify-content: center;
       z-index: 9999; color: #fff; font-family: -apple-system, sans-serif;
@@ -61,6 +61,11 @@
       border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 18px; }
     #loading-overlay p { font-size: 16px; opacity: 0.8; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #progress-bar {
+      width: 200px; height: 4px; background: rgba(255,255,255,0.2);
+      border-radius: 2px; margin-top: 12px; overflow: hidden;
+    }
+    #progress-fill { height: 100%; background: #ff7755; border-radius: 2px; width: 0%; }
     #scan-hint {
       position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
       background: rgba(0,0,0,0.6); color: #fff; padding: 12px 24px;
@@ -78,7 +83,7 @@
 </head>
 <body>
 
-  <div id="version-badge">v1.3</div>
+  <div id="version-badge">v1.4</div>
   <div id="dbg">waiting...</div>
 
   <div id="tap-start">
@@ -86,15 +91,15 @@
     <h2>Tap to Start AR</h2>
     <p>Aim at the mural artwork</p>
   </div>
-  <div id="loading-overlay"><div class="spinner"></div><p>Starting AR...</p></div>
-  <div id="scan-hint">📷 Aim at the mural artwork</div>
-  <button id="toggle-btn">Toggle Video</button>
 
-  <!-- Videos: hidden but src loaded -->
-  <video id="vid1" src="assets/Jepah_1.mp4" muted playsinline loop crossorigin="anonymous"
-    style="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;"></video>
-  <video id="vid2" src="assets/Jepah_2.mp4" muted playsinline loop crossorigin="anonymous"
-    style="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;"></video>
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <p id="loading-text">Loading frames...</p>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+  </div>
+
+  <div id="scan-hint">📷 Aim at the mural artwork</div>
+  <button id="toggle-btn">Pause</button>
 
   <a-scene
     mindar-image="imageTargetSrc: assets/targets.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no;"
@@ -107,140 +112,223 @@
       look-controls="enabled: false"
       wasd-controls="enabled: false">
     </a-camera>
-
     <a-entity mindar-image-target="targetIndex: 0">
-      <!-- No geometry component — we build the mesh 100% manually in JS -->
-      <a-entity id="vid-plane"></a-entity>
+      <a-entity id="seq-plane"></a-entity>
     </a-entity>
-
     <a-light type="ambient" color="#fff" intensity="1"></a-light>
   </a-scene>
 
   <script>
-    var dbg = document.getElementById('dbg');
+    // ── CONFIG ────────────────────────────────────────────────────────────
+    var CFG = {
+      folder:     'assets/pngseq',
+      prefix:     '[cityleaf]',   // exact prefix including brackets
+      digits:     3,              // 001, 002, 003 ...
+      ext:        '.png',
+      startFrame: 1,
+      endFrame:   28,             // UPDATE to your actual last frame number
+      fps:        12,             // frames per second playback speed
+      planeW:     1.0,            // AR plane width  (tune after first test)
+      planeH:     1.0,            // AR plane height (tune after first test)
+    };
+    // ─────────────────────────────────────────────────────────────────────
+
+    var dbg          = document.getElementById('dbg');
+    var loadingEl    = document.getElementById('loading-overlay');
+    var loadingText  = document.getElementById('loading-text');
+    var progressFill = document.getElementById('progress-fill');
+    var scanHint     = document.getElementById('scan-hint');
+    var toggleBtn    = document.getElementById('toggle-btn');
+    var scene        = document.querySelector('a-scene');
+
+    var textures     = [];
+    var mesh         = null;
+    var currentFrame = 0;
+    var isPlaying    = false;
+    var lastTime     = 0;
+    var frameDur     = 1000 / CFG.fps;
+
     var logLines = [];
     function log(msg) {
       logLines.unshift(msg);
-      if (logLines.length > 7) logLines.pop();
+      if (logLines.length > 6) logLines.pop();
       dbg.innerHTML = logLines.join('<br>');
     }
 
-    var vid1El = document.getElementById('vid1');
-    var vid2El = document.getElementById('vid2');
-    var scene  = document.querySelector('a-scene');
-    var showingVid1 = true;
+    // ── Zero-pad filename builder ─────────────────────────────────────────
+    function framePath(i) {
+      var n = String(i);
+      while (n.length < CFG.digits) n = '0' + n;
+      return CFG.folder + '/' + CFG.prefix + n + CFG.ext;
+    }
 
-    // Canvas + texture (built once, reused)
-    var cvs = document.createElement('canvas');
-    cvs.width = 512; cvs.height = 512;
-    var ctx = cvs.getContext('2d');
-    ctx.fillStyle = '#ff0000';
-    ctx.fillRect(0, 0, 512, 512); // red = canvas alive
+    // ── Preload all PNG frames ────────────────────────────────────────────
+    function preloadFrames(onDone) {
+      var loader  = new THREE.TextureLoader();
+      var total   = CFG.endFrame - CFG.startFrame + 1;
+      var loaded  = 0;
+      var failed  = 0;
+      textures    = new Array(total);
 
-    var tex = new THREE.CanvasTexture(cvs);
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
+      log('loading ' + total + ' frames...');
 
-    var mat = new THREE.MeshBasicMaterial({
-      map: tex,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      transparent: false,
+      for (var i = CFG.startFrame; i <= CFG.endFrame; i++) {
+        (function(frameIdx, arrIdx) {
+          var path = framePath(frameIdx);
+          loader.load(
+            path,
+            function(tex) {
+              tex.minFilter = THREE.LinearFilter;
+              tex.magFilter = THREE.LinearFilter;
+              textures[arrIdx] = tex;
+              loaded++;
+              var pct = Math.round((loaded + failed) / total * 100);
+              progressFill.style.width = pct + '%';
+              loadingText.textContent  = 'Loading... ' + (loaded + failed) + '/' + total;
+              if (loaded + failed === total) {
+                log('done: ' + loaded + ' ok, ' + failed + ' fail');
+                onDone();
+              }
+            },
+            undefined,
+            function() {
+              failed++;
+              log('fail: ' + framePath(frameIdx));
+              var pct = Math.round((loaded + failed) / total * 100);
+              progressFill.style.width = pct + '%';
+              if (loaded + failed === total) {
+                log('done: ' + loaded + ' ok, ' + failed + ' fail');
+                onDone();
+              }
+            }
+          );
+        })(i, i - CFG.startFrame);
+      }
+    }
+
+    // ── Build plane mesh with first texture ───────────────────────────────
+    function buildMesh() {
+      // Find first valid texture
+      var firstTex = null;
+      for (var i = 0; i < textures.length; i++) {
+        if (textures[i]) { firstTex = textures[i]; break; }
+      }
+      if (!firstTex) { log('ERROR: no valid textures!'); return; }
+
+      var geo = new THREE.PlaneGeometry(CFG.planeW, CFG.planeH);
+      var mat = new THREE.MeshBasicMaterial({
+        map:         firstTex,
+        side:        THREE.DoubleSide,
+        transparent: true,   // PNG alpha support
+        depthWrite:  true,
+        alphaTest:   0.1,    // discard near-transparent pixels
+      });
+
+      mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(0, 0, 0);
+      mesh.visible = false;
+
+      var planeEl = document.getElementById('seq-plane');
+      planeEl.object3D.add(mesh);
+      log('mesh ready, ' + textures.filter(Boolean).length + ' frames');
+    }
+
+    // ── Animation loop ────────────────────────────────────────────────────
+    function animLoop(now) {
+      requestAnimationFrame(animLoop);
+      if (!isPlaying || !mesh || textures.length === 0) return;
+      if (now - lastTime < frameDur) return;
+      lastTime = now;
+
+      // Advance frame, skip nulls
+      var tries = 0;
+      do {
+        currentFrame = (currentFrame + 1) % textures.length;
+        tries++;
+      } while (!textures[currentFrame] && tries < textures.length);
+
+      if (textures[currentFrame]) {
+        mesh.material.map = textures[currentFrame];
+        mesh.material.needsUpdate = true;
+      }
+    }
+    requestAnimationFrame(animLoop);
+
+    // ── Tap to start ──────────────────────────────────────────────────────
+    document.getElementById('tap-start').addEventListener('click', function () {
+      document.getElementById('tap-start').style.display = 'none';
+      loadingEl.style.display = 'flex';
+      log('loading frames...');
+
+      preloadFrames(function() {
+        if (scene.hasLoaded) {
+          buildMesh();
+          startAR();
+        } else {
+          scene.addEventListener('loaded', function() {
+            buildMesh();
+            startAR();
+          }, { once: true });
+        }
+      });
     });
 
-    var geo  = new THREE.PlaneGeometry(1, 1);
-    var mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, 0, 0);
-    mesh.visible = false; // hidden until target found
-
-    // Draw loop — copies video frame to canvas every animation frame
-    var drawActive = false;
-    function drawLoop() {
-      if (!drawActive) { requestAnimationFrame(drawLoop); return; }
-      var vid = showingVid1 ? vid1El : vid2El;
-      if (vid.readyState >= 2) {
-        ctx.drawImage(vid, 0, 0, 512, 512);
+    function startAR() {
+      log('starting AR...');
+      var sys = scene.systems['mindar-image-system'];
+      if (sys) {
+        sys.start();
+        log('AR started');
       } else {
-        ctx.fillStyle = '#000055';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.fillStyle = '#fff';
-        ctx.font = '24px monospace';
-        ctx.fillText('rs:' + vid.readyState, 20, 256);
+        log('ERROR: no mindar sys');
       }
-      tex.needsUpdate = true;
-      requestAnimationFrame(drawLoop);
     }
-    requestAnimationFrame(drawLoop);
 
-    // Inject mesh into target entity once scene loads
+    // ── Scene events ──────────────────────────────────────────────────────
     scene.addEventListener('loaded', function () {
       log('scene loaded');
-
-      // Get the vid-plane entity's object3D and add our mesh directly
-      var planeEl = document.getElementById('vid-plane');
-      planeEl.object3D.add(mesh);
-      log('mesh injected into object3D');
-
-      // Start MindAR if already tapped
-      if (window.arShouldStart) {
-        var sys = scene.systems['mindar-image-system'];
-        if (sys) sys.start();
-      }
 
       var sys = scene.systems['mindar-image-system'];
       if (sys) {
         sys.el.addEventListener('arReady', function () {
-          log('arReady');
-          document.getElementById('loading-overlay').style.display = 'none';
-          document.getElementById('scan-hint').style.display = 'block';
+          log('arReady ✓');
+          loadingEl.style.display = 'none';
+          scanHint.style.display  = 'block';
         });
       }
-      setTimeout(function () {
-        document.getElementById('loading-overlay').style.display = 'none';
-        document.getElementById('scan-hint').style.display = 'block';
-      }, 12000);
+      // Fallback hide loading
+      setTimeout(function() {
+        if (loadingEl.style.display !== 'none') {
+          loadingEl.style.display = 'none';
+          scanHint.style.display  = 'block';
+        }
+      }, 15000);
 
       var target = document.querySelector('[mindar-image-target]');
       target.addEventListener('targetFound', function () {
-        log('TARGET FOUND - showing mesh');
+        log('TARGET FOUND ✓');
+        if (!mesh) { log('ERROR: mesh null!'); return; }
         mesh.visible = true;
-        drawActive = true;
-        document.getElementById('scan-hint').style.display = 'none';
-        document.getElementById('toggle-btn').style.display = 'block';
-        (showingVid1 ? vid1El : vid2El).play().catch(function(){});
+        isPlaying    = true;
+        lastTime     = performance.now();
+        scanHint.style.display  = 'none';
+        toggleBtn.style.display = 'block';
       });
       target.addEventListener('targetLost', function () {
         log('target lost');
-        mesh.visible = false;
-        document.getElementById('scan-hint').style.display = 'block';
-        document.getElementById('toggle-btn').style.display = 'none';
+        if (mesh) mesh.visible = false;
+        isPlaying = false;
+        scanHint.style.display  = 'block';
+        toggleBtn.style.display = 'none';
       });
     });
 
-    // Tap to start
-    document.getElementById('tap-start').addEventListener('click', function () {
-      document.getElementById('tap-start').style.display = 'none';
-      document.getElementById('loading-overlay').style.display = 'flex';
-      log('tap - unlocking video');
-
-      vid1El.play().then(function () { log('vid1 ok rs:' + vid1El.readyState); })
-                   .catch(function (e) { log('vid1 err:' + e.message); });
-      vid2El.play().catch(function(){});
-
-      window.arShouldStart = true;
-      if (scene.hasLoaded) {
-        var sys = scene.systems['mindar-image-system'];
-        if (sys) { sys.start(); log('mindar started'); }
-        else { log('no sys yet'); }
-      }
-    });
-
-    // Toggle
-    document.getElementById('toggle-btn').addEventListener('click', function () {
-      showingVid1 = !showingVid1;
-      var vid = showingVid1 ? vid1El : vid2El;
-      vid.play().catch(function(){});
-      log('toggle -> vid' + (showingVid1 ? 1 : 2));
+    // ── Toggle pause/play ─────────────────────────────────────────────────
+    toggleBtn.addEventListener('click', function () {
+      isPlaying = !isPlaying;
+      toggleBtn.textContent = isPlaying ? 'Pause' : 'Play';
+      if (isPlaying) lastTime = performance.now();
+      log(isPlaying ? 'playing' : 'paused');
     });
   </script>
 
