@@ -83,7 +83,7 @@
 </head>
 <body>
 
-  <div id="version-badge">v1.4</div>
+  <div id="version-badge">v1.5</div>
   <div id="dbg">waiting...</div>
 
   <div id="tap-start">
@@ -91,20 +91,18 @@
     <h2>Tap to Start AR</h2>
     <p>Aim at the mural artwork</p>
   </div>
-
   <div id="loading-overlay">
     <div class="spinner"></div>
     <p id="loading-text">Loading frames...</p>
     <div id="progress-bar"><div id="progress-fill"></div></div>
   </div>
-
   <div id="scan-hint">📷 Aim at the mural artwork</div>
   <button id="toggle-btn">Pause</button>
 
   <a-scene
     mindar-image="imageTargetSrc: assets/targets.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: no;"
     color-space="sRGB"
-    renderer="colorManagement: true; alpha: true"
+    renderer="colorManagement: true; alpha: true; sortObjects: true"
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
   >
@@ -119,19 +117,17 @@
   </a-scene>
 
   <script>
-    // ── CONFIG ────────────────────────────────────────────────────────────
     var CFG = {
       folder:     'assets/pngseq',
-      prefix:     '[cityleaf]',   // exact prefix including brackets
-      digits:     3,              // 001, 002, 003 ...
+      prefix:     '[cityleaf]',
+      digits:     3,
       ext:        '.png',
       startFrame: 1,
-      endFrame:   28,             // UPDATE to your actual last frame number
-      fps:        12,             // frames per second playback speed
-      planeW:     1.0,            // AR plane width  (tune after first test)
-      planeH:     1.0,            // AR plane height (tune after first test)
+      endFrame:   20,        // exactly 20 frames
+      fps:        12,
+      planeW:     1.0,
+      planeH:     1.0,
     };
-    // ─────────────────────────────────────────────────────────────────────
 
     var dbg          = document.getElementById('dbg');
     var loadingEl    = document.getElementById('loading-overlay');
@@ -155,139 +151,111 @@
       dbg.innerHTML = logLines.join('<br>');
     }
 
-    // ── Zero-pad filename builder ─────────────────────────────────────────
     function framePath(i) {
       var n = String(i);
       while (n.length < CFG.digits) n = '0' + n;
       return CFG.folder + '/' + CFG.prefix + n + CFG.ext;
     }
 
-    // ── Preload all PNG frames ────────────────────────────────────────────
     function preloadFrames(onDone) {
-      var loader  = new THREE.TextureLoader();
-      var total   = CFG.endFrame - CFG.startFrame + 1;
-      var loaded  = 0;
-      var failed  = 0;
-      textures    = new Array(total);
-
+      var loader = new THREE.TextureLoader();
+      var total  = CFG.endFrame - CFG.startFrame + 1;
+      var done   = 0;
+      textures   = new Array(total);
       log('loading ' + total + ' frames...');
 
       for (var i = CFG.startFrame; i <= CFG.endFrame; i++) {
-        (function(frameIdx, arrIdx) {
-          var path = framePath(frameIdx);
-          loader.load(
-            path,
+        (function(fi, ai) {
+          loader.load(framePath(fi),
             function(tex) {
               tex.minFilter = THREE.LinearFilter;
               tex.magFilter = THREE.LinearFilter;
-              textures[arrIdx] = tex;
-              loaded++;
-              var pct = Math.round((loaded + failed) / total * 100);
-              progressFill.style.width = pct + '%';
-              loadingText.textContent  = 'Loading... ' + (loaded + failed) + '/' + total;
-              if (loaded + failed === total) {
-                log('done: ' + loaded + ' ok, ' + failed + ' fail');
-                onDone();
-              }
+              // IMPORTANT: do NOT use sRGB encoding — keep linear so alpha works
+              tex.encoding = THREE.LinearEncoding;
+              textures[ai] = tex;
+              done++;
+              progressFill.style.width = Math.round(done/total*100) + '%';
+              loadingText.textContent  = 'Loading... ' + done + '/' + total;
+              if (done === total) { log('all ' + total + ' loaded!'); onDone(); }
             },
             undefined,
             function() {
-              failed++;
-              log('fail: ' + framePath(frameIdx));
-              var pct = Math.round((loaded + failed) / total * 100);
-              progressFill.style.width = pct + '%';
-              if (loaded + failed === total) {
-                log('done: ' + loaded + ' ok, ' + failed + ' fail');
-                onDone();
-              }
+              done++;
+              if (done === total) { log('done (' + done + ')'); onDone(); }
             }
           );
         })(i, i - CFG.startFrame);
       }
     }
 
-    // ── Build plane mesh with first texture ───────────────────────────────
     function buildMesh() {
-      // Find first valid texture
       var firstTex = null;
       for (var i = 0; i < textures.length; i++) {
         if (textures[i]) { firstTex = textures[i]; break; }
       }
-      if (!firstTex) { log('ERROR: no valid textures!'); return; }
+      if (!firstTex) { log('ERROR: no textures'); return; }
 
       var geo = new THREE.PlaneGeometry(CFG.planeW, CFG.planeH);
-      var mat = new THREE.MeshBasicMaterial({
-        map:         firstTex,
-        side:        THREE.DoubleSide,
-        transparent: true,   // PNG alpha support
-        depthWrite:  true,
-        alphaTest:   0.1,    // discard near-transparent pixels
+
+      // KEY FIX: use MeshStandardMaterial with emissiveMap so it's
+      // unaffected by renderer alpha compositing issues
+      var mat = new THREE.MeshStandardMaterial({
+        map:              firstTex,
+        emissiveMap:      firstTex,
+        emissive:         new THREE.Color(1, 1, 1),
+        emissiveIntensity: 1.0,
+        transparent:      true,
+        alphaTest:        0.05,
+        side:             THREE.DoubleSide,
+        depthWrite:       false,
+        metalness:        0,
+        roughness:        1,
       });
 
       mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(0, 0, 0);
+      mesh.position.set(0, 0, 0.001); // tiny z offset to avoid z-fighting
+      mesh.renderOrder = 999;
       mesh.visible = false;
 
       var planeEl = document.getElementById('seq-plane');
       planeEl.object3D.add(mesh);
-      log('mesh ready, ' + textures.filter(Boolean).length + ' frames');
+      log('mesh built OK');
     }
 
-    // ── Animation loop ────────────────────────────────────────────────────
     function animLoop(now) {
       requestAnimationFrame(animLoop);
-      if (!isPlaying || !mesh || textures.length === 0) return;
+      if (!isPlaying || !mesh || !textures.length) return;
       if (now - lastTime < frameDur) return;
       lastTime = now;
-
-      // Advance frame, skip nulls
-      var tries = 0;
-      do {
-        currentFrame = (currentFrame + 1) % textures.length;
-        tries++;
-      } while (!textures[currentFrame] && tries < textures.length);
-
-      if (textures[currentFrame]) {
-        mesh.material.map = textures[currentFrame];
-        mesh.material.needsUpdate = true;
+      currentFrame = (currentFrame + 1) % textures.length;
+      var tex = textures[currentFrame];
+      if (tex) {
+        mesh.material.map          = tex;
+        mesh.material.emissiveMap  = tex;
+        mesh.material.needsUpdate  = true;
       }
     }
     requestAnimationFrame(animLoop);
 
-    // ── Tap to start ──────────────────────────────────────────────────────
     document.getElementById('tap-start').addEventListener('click', function () {
       document.getElementById('tap-start').style.display = 'none';
       loadingEl.style.display = 'flex';
       log('loading frames...');
 
       preloadFrames(function() {
-        if (scene.hasLoaded) {
-          buildMesh();
-          startAR();
-        } else {
-          scene.addEventListener('loaded', function() {
-            buildMesh();
-            startAR();
-          }, { once: true });
-        }
+        if (scene.hasLoaded) { buildMesh(); startAR(); }
+        else { scene.addEventListener('loaded', function() { buildMesh(); startAR(); }, { once: true }); }
       });
     });
 
     function startAR() {
-      log('starting AR...');
       var sys = scene.systems['mindar-image-system'];
-      if (sys) {
-        sys.start();
-        log('AR started');
-      } else {
-        log('ERROR: no mindar sys');
-      }
+      if (sys) { sys.start(); log('AR started'); }
+      else { log('ERROR: no mindar sys'); }
     }
 
-    // ── Scene events ──────────────────────────────────────────────────────
     scene.addEventListener('loaded', function () {
       log('scene loaded');
-
       var sys = scene.systems['mindar-image-system'];
       if (sys) {
         sys.el.addEventListener('arReady', function () {
@@ -296,18 +264,15 @@
           scanHint.style.display  = 'block';
         });
       }
-      // Fallback hide loading
       setTimeout(function() {
-        if (loadingEl.style.display !== 'none') {
-          loadingEl.style.display = 'none';
-          scanHint.style.display  = 'block';
-        }
+        loadingEl.style.display = 'none';
+        scanHint.style.display  = 'block';
       }, 15000);
 
       var target = document.querySelector('[mindar-image-target]');
       target.addEventListener('targetFound', function () {
         log('TARGET FOUND ✓');
-        if (!mesh) { log('ERROR: mesh null!'); return; }
+        if (!mesh) { log('mesh null!'); return; }
         mesh.visible = true;
         isPlaying    = true;
         lastTime     = performance.now();
@@ -323,12 +288,10 @@
       });
     });
 
-    // ── Toggle pause/play ─────────────────────────────────────────────────
     toggleBtn.addEventListener('click', function () {
       isPlaying = !isPlaying;
       toggleBtn.textContent = isPlaying ? 'Pause' : 'Play';
       if (isPlaying) lastTime = performance.now();
-      log(isPlaying ? 'playing' : 'paused');
     });
   </script>
 
