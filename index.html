@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Arfest WanJepah AR</title>
 
-  <!-- EXACT same versions as working AtarImage project -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-
     #mindar-ar-container,
     #mindar-ar-container > div {
       position: fixed !important;
@@ -20,27 +18,19 @@
       width: 100% !important; height: 100% !important;
     }
     video {
-      position: fixed !important;
-      top: 0 !important; left: 0 !important;
+      position: fixed !important; top: 0 !important; left: 0 !important;
       width: 100% !important; height: 100% !important;
-      object-fit: cover !important;
-      z-index: 0 !important;
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
+      object-fit: cover !important; z-index: 0 !important;
+      display: block !important; visibility: visible !important; opacity: 1 !important;
     }
     canvas {
-      position: fixed !important;
-      top: 0 !important; left: 0 !important;
+      position: fixed !important; top: 0 !important; left: 0 !important;
       width: 100% !important; height: 100% !important;
-      z-index: 1 !important;
-      background: transparent !important;
+      z-index: 1 !important; background: transparent !important;
     }
     a-scene {
-      position: fixed !important;
-      top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      z-index: 1 !important;
+      position: fixed !important; top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 1 !important;
     }
     #version-badge {
       position: fixed; top: 12px; left: 12px;
@@ -61,44 +51,40 @@
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       z-index: 9999; color: #fff;
-      font-family: -apple-system, sans-serif;
-      transition: opacity 0.6s;
+      font-family: -apple-system, sans-serif; transition: opacity 0.6s;
     }
     .spinner {
       width: 52px; height: 52px;
-      border: 4px solid rgba(255,255,255,0.15);
-      border-top-color: #ff7755;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-bottom: 18px;
+      border: 4px solid rgba(255,255,255,0.15); border-top-color: #ff7755;
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 18px;
     }
     #loading-overlay p { font-size: 16px; opacity: 0.8; }
+    #progress-bar {
+      width: 200px; height: 4px; background: rgba(255,255,255,0.2);
+      border-radius: 2px; margin-top: 12px; overflow: hidden;
+    }
+    #progress-fill { height: 100%; background: #ff7755; border-radius: 2px; width: 0%; transition: width 0.1s; }
     @keyframes spin { to { transform: rotate(360deg); } }
     #scan-hint {
-      position: fixed; bottom: 40px; left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.6);
-      color: #fff; padding: 12px 24px;
-      border-radius: 99px;
-      font-family: -apple-system, sans-serif;
-      font-size: 15px; pointer-events: none;
-      z-index: 9998; display: none;
-      white-space: nowrap;
+      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.6); color: #fff; padding: 12px 24px;
+      border-radius: 99px; font-family: -apple-system, sans-serif;
+      font-size: 15px; pointer-events: none; z-index: 9998; display: none; white-space: nowrap;
     }
   </style>
 </head>
 <body>
 
-  <div id="version-badge">v1.8-cubetest</div>
-  <div id="dbg">starting...</div>
+  <div id="version-badge">v1.9</div>
+  <div id="dbg">loading frames...</div>
 
   <div id="loading-overlay">
     <div class="spinner"></div>
-    <p>Starting AR...</p>
+    <p id="loading-text">Loading frames...</p>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
   </div>
   <div id="scan-hint">📷 Aim at the mural artwork</div>
 
-  <!-- EXACT same a-scene attributes as working AtarImage -->
   <a-scene
     mindar-image="imageTargetSrc: assets/targets.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: no;"
     color-space="sRGB"
@@ -112,37 +98,13 @@
     </a-camera>
 
     <a-entity mindar-image-target="targetIndex: 0">
-
-      <!-- Same as working AtarImage blue box — just colored differently -->
-      <!-- RED: center of marker, spinning -->
-      <a-box
-        position="0 0 0"
-        scale="0.3 0.3 0.3"
-        color="#ff0000"
-        animation="property: rotation; from: 0 0 0; to: 0 360 0; loop: true; dur: 2000; easing: linear">
-      </a-box>
-
-      <!-- YELLOW: offset right -->
-      <a-box
-        position="0.4 0 0"
-        scale="0.15 0.15 0.15"
-        color="#ffff00">
-      </a-box>
-
-      <!-- GREEN: offset up -->
-      <a-box
-        position="0 0.4 0"
-        scale="0.15 0.15 0.15"
-        color="#00ff00">
-      </a-box>
-
-      <!-- BLUE: floating above -->
-      <a-box
-        position="0 0 0.2"
-        scale="0.15 0.15 0.15"
-        color="#0088ff">
-      </a-box>
-
+      <!-- plane matches original 8th Wall: position 0.05 -0.03 0, scale 0.82 -->
+      <a-entity id="seq-plane"
+        geometry="primitive: plane; width: 1.2; height: 1.2;"
+        position="0.05 -0.03 0"
+        scale="0.82 0.82 0.82"
+        material="shader: flat; transparent: true; alphaTest: 0.05; side: double;">
+      </a-entity>
     </a-entity>
 
     <a-light type="ambient"     color="#fff" intensity="1.5"></a-light>
@@ -150,50 +112,143 @@
   </a-scene>
 
   <script>
-    var overlay  = document.getElementById('loading-overlay');
-    var scanHint = document.getElementById('scan-hint');
-    var dbg      = document.getElementById('dbg');
-    var scene    = document.querySelector('a-scene');
-    var logLines = [];
+    // ── CONFIG ────────────────────────────────────────────────────────────
+    var CFG = {
+      folder:     'assets/pngseq',
+      prefix:     '[cityleaf]',
+      digits:     3,
+      ext:        '.png',
+      startFrame: 1,
+      endFrame:   20,
+      fps:        12,
+    };
+    // ─────────────────────────────────────────────────────────────────────
 
+    var overlay      = document.getElementById('loading-overlay');
+    var loadingText  = document.getElementById('loading-text');
+    var progressFill = document.getElementById('progress-fill');
+    var scanHint     = document.getElementById('scan-hint');
+    var dbg          = document.getElementById('dbg');
+    var scene        = document.querySelector('a-scene');
+
+    var textures     = [];
+    var currentFrame = 0;
+    var lastTime     = 0;
+    var frameDur     = 1000 / CFG.fps;
+    var isPlaying    = false;
+    var planeMesh    = null;
+
+    var logLines = [];
     function log(msg) {
       logLines.unshift(msg);
       if (logLines.length > 6) logLines.pop();
       dbg.innerHTML = logLines.join('<br>');
     }
 
-    function hideOverlay() {
-      overlay.style.opacity = '0';
-      setTimeout(function() { overlay.style.display = 'none'; }, 700);
-      scanHint.style.display = 'block';
+    function framePath(i) {
+      var n = String(i);
+      while (n.length < CFG.digits) n = '0' + n;
+      return CFG.folder + '/' + CFG.prefix + n + CFG.ext;
     }
 
+    // ── Preload PNG frames ─────────────────────────────────────────────────
+    function preloadFrames(onDone) {
+      var loader = new THREE.TextureLoader();
+      var total  = CFG.endFrame - CFG.startFrame + 1;
+      var done   = 0;
+      textures   = new Array(total);
+      log('loading ' + total + ' frames...');
+
+      for (var i = CFG.startFrame; i <= CFG.endFrame; i++) {
+        (function(fi, ai) {
+          loader.load(framePath(fi),
+            function(tex) {
+              tex.minFilter = THREE.LinearFilter;
+              tex.magFilter = THREE.LinearFilter;
+              textures[ai] = tex;
+              done++;
+              progressFill.style.width = Math.round(done / total * 100) + '%';
+              loadingText.textContent  = 'Loading... ' + done + '/' + total;
+              if (done === total) { log('all ' + total + ' frames ready'); onDone(); }
+            },
+            undefined,
+            function() { done++; if (done === total) onDone(); }
+          );
+        })(i, i - CFG.startFrame);
+      }
+    }
+
+    // ── Wire up plane mesh once scene loads ───────────────────────────────
+    function wirePlane() {
+      var planeEl = document.getElementById('seq-plane');
+      // Wait for mesh to be built by A-Frame geometry component
+      function tryGetMesh() {
+        planeMesh = planeEl.getObject3D('mesh');
+        if (!planeMesh) { setTimeout(tryGetMesh, 100); return; }
+        // Apply first frame
+        if (textures[0]) {
+          planeMesh.material.map = textures[0];
+          planeMesh.material.needsUpdate = true;
+        }
+        log('plane mesh wired');
+      }
+      tryGetMesh();
+    }
+
+    // ── Animation loop ─────────────────────────────────────────────────────
+    function animLoop(now) {
+      requestAnimationFrame(animLoop);
+      if (!isPlaying || !planeMesh || textures.length === 0) return;
+      if (now - lastTime < frameDur) return;
+      lastTime     = now;
+      currentFrame = (currentFrame + 1) % textures.length;
+      var tex      = textures[currentFrame];
+      if (tex) {
+        planeMesh.material.map = tex;
+        planeMesh.material.needsUpdate = true;
+      }
+    }
+    requestAnimationFrame(animLoop);
+
+    // ── Scene / AR events ──────────────────────────────────────────────────
     scene.addEventListener('loaded', function () {
       log('scene loaded');
+
+      // Start preloading frames immediately
+      preloadFrames(function() {
+        wirePlane();
+      });
+
       var sys = scene.systems['mindar-image-system'];
       if (sys) {
         sys.el.addEventListener('arReady', function() {
           log('arReady ✓');
-          var videos = document.querySelectorAll('video');
-          videos.forEach(function(v) {
-            v.style.display     = 'block';
-            v.style.visibility  = 'visible';
-            v.style.opacity     = '1';
-            v.style.zIndex      = '0';
+          // Fix video visibility
+          document.querySelectorAll('video').forEach(function(v) {
+            v.style.display = 'block'; v.style.visibility = 'visible';
+            v.style.opacity = '1';     v.style.zIndex = '0';
           });
-          hideOverlay();
+          overlay.style.opacity = '0';
+          setTimeout(function() { overlay.style.display = 'none'; }, 700);
+          scanHint.style.display = 'block';
         });
       }
-      setTimeout(hideOverlay, 8000);
-    });
+      setTimeout(function() {
+        overlay.style.opacity = '0';
+        setTimeout(function() { overlay.style.display = 'none'; }, 700);
+        scanHint.style.display = 'block';
+      }, 10000);
 
-    document.querySelectorAll('[mindar-image-target]').forEach(function(t) {
-      t.addEventListener('targetFound', function() {
+      var target = document.querySelector('[mindar-image-target]');
+      target.addEventListener('targetFound', function () {
         log('TARGET FOUND ✓');
+        isPlaying = true;
+        lastTime  = performance.now();
         scanHint.style.display = 'none';
       });
-      t.addEventListener('targetLost', function() {
+      target.addEventListener('targetLost', function () {
         log('target lost');
+        isPlaying = false;
         scanHint.style.display = 'block';
       });
     });
